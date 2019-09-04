@@ -5,6 +5,7 @@ library(xlsx)
 library(data.table)
 library(DT)
 library(shinythemes)
+library(tidyr)
 
 shinyServer(function(input, output, session) {
   
@@ -16,7 +17,7 @@ shinyServer(function(input, output, session) {
     if (length(grep("csv", input$pp_datafile$datapath)) + length(grep("CSV", input$pp_datafile$datapath)) == 0) {
       PayPal_data <- read_excel(input$pp_datafile$datapath)
     } else {
-      PayPal_data <- read.csv(input$pp_datafile$datapath,fileEncoding="UTF-8-BOM")
+      PayPal_data <- read.csv(input$pp_datafile$datapath, stringsAsFactors = FALSE)
     }
     
     names(PayPal_data) <- gsub("[\\. /]","_",names(PayPal_data))
@@ -33,19 +34,37 @@ shinyServer(function(input, output, session) {
     updateTabsetPanel(session, "ppTab", selected = "Original data")
   })
   
-  output$pp_data <- renderDataTable(
-    datatable(getData_pp(), class = 'cell-border stripe nowrap', options = list(pageLength = 15))
-  )
   
-  PaypalVariables <- c("Date", "Time", "Name", "Gross", "From_Email_Address", "Transaction_ID", 
+  PaypalVariables <- c("Date","Time","Name", "Gross", "From_Email_Address", "Transaction_ID", 
                        "Address_Line_1", "Address_Line_2_District_Neighborhood", "Town_City", 
                        "State_Province_Region_County_Territory_Prefecture_Republic", "Zip_Postal_Code", "Country", 
                        "Contact_Phone_Number", "Note")
   
+  output$pp_add_fields <- renderUI({
+    
+    options <- setdiff(names(getData_pp()),PaypalVariables)
+    
+    pickerInput(inputId = "pp_add_field", label = "Addional field(s)",
+                choices = options,
+                multiple = TRUE,
+                options = pickerOptions(actionsBox = TRUE, 
+                                        selectedTextFormat = paste0("count > ", length(options)-1),
+                                        countSelectedText = "All selected")
+                
+    )
+    
+
+  })
+  
+  output$pp_data <- renderDataTable(
+    datatable(getData_pp(), class = 'cell-border stripe nowrap', options = list(pageLength = 15))
+  )
+
+  
   datasetTrans_pp <- eventReactive(input$pp_transform,{
     PayPal_data <- getData_pp()
     
-    CleanPaypal <- PayPal_data[intersect(PaypalVariables, names(PayPal_data))] %>%
+    CleanPaypal <- PayPal_data[intersect(c(PaypalVariables, input$pp_add_field), names(PayPal_data))] %>%
       setnames(old = c("Date", "Time", "Name", "Gross", "From_Email_Address", "Transaction_ID", 
                        "Address_Line_1", "Address_Line_2_District_Neighborhood", "Town_City", 
                        "State_Province_Region_County_Territory_Prefecture_Republic", "Zip_Postal_Code", "Country", 
@@ -66,13 +85,13 @@ shinyServer(function(input, output, session) {
     CleanPaypal$group_no_name <- ifelse(CleanPaypal$Full_name == "" | is.na(CleanPaypal$Full_name), "yes", NA)
     
     CleanPaypal$Full_name <- ifelse(CleanPaypal$Full_name == "" | is.na(CleanPaypal$Full_name), CleanPaypal$Email, CleanPaypal$Full_name)
-    
+      
     pp_order <- c("Donation_Date", "Amount", "Payment_Method", "Full_name","Email", "Home_Phone",
                   "Address", "Address_2", "City", "State", "Zip_code", "Country",
                   "Description", "group_no_name", "Transaction_ID")
     
-    CleanPaypal <- select(CleanPaypal, intersect(pp_order, names(CleanPaypal)))
-    
+    CleanPaypal <- select(CleanPaypal, intersect(c(pp_order, input$pp_add_field), names(CleanPaypal)))
+
     return(CleanPaypal)
     
   })
@@ -101,7 +120,7 @@ shinyServer(function(input, output, session) {
     if (length(grep("csv", input$mc_datafile$datapath)) + length(grep("CSV", input$mc_datafile$datapath)) == 0) {
       Mailchimp_data <- read_excel(input$mc_datafile$datapath, col_types = "text")
     } else {
-      Mailchimp_data <- read.csv(input$mc_datafile$datapath, fileEncoding="UTF-8-BOM")
+      Mailchimp_data <- read.csv(input$mc_datafile$datapath, stringsAsFactors = FALSE)
     }
     
     names(Mailchimp_data) <- gsub("[\\. /]","_",names(Mailchimp_data))
@@ -124,12 +143,23 @@ shinyServer(function(input, output, session) {
   
   MailchimpVariables <- c("First_Name", "Last_Name", "Email_Address",  "Phone_Number", "Address","REGION", "CC","NOTES")
   
-  mc_file_type <- reactive({input$mc_type})
+  output$MC_add_field <- renderUI({
+    
+    options <- setdiff(names(getData_mc()),MailchimpVariables)
+    
+    pickerInput(inputId = "mc_add_field", label = "Addional field(s)",
+                choices = options,
+                multiple = TRUE,
+                options = pickerOptions(actionsBox = TRUE, 
+                                        selectedTextFormat = paste0("count > ", length(options)-1),
+                                        countSelectedText = "All selected") 
+    )
+  })
   
   datasetTrans_mc <- eventReactive(input$mc_transform,{
     Mailchimp_data <- getData_mc()
     
-    CleanMailchimp <- Mailchimp_data[intersect(MailchimpVariables, names(Mailchimp_data))] %>%
+    CleanMailchimp <- Mailchimp_data[intersect(c(MailchimpVariables, input$mc_add_field), names(Mailchimp_data))] %>%
       setnames(old = c("First_Name", "Last_Name", "Email_Address", "Address", "Phone_Number", "CC", "REGION", "NOTES"),
                
                new = c("First_Name", "Last_Name", "Email", "Full_address", "Home_phone", "Country", "State", "user_notes"),
@@ -145,13 +175,25 @@ shinyServer(function(input, output, session) {
       CleanMailchimp$Last_Name[k] <- NA
     }
     
+    if ("First_Name" %in% names(CleanMailchimp)) {
+      CleanMailchimp$group_no_name <- ifelse(CleanMailchimp$First_Name == "" | is.na(CleanMailchimp$First_Name), "yes", NA)
+      
+      CleanMailchimp$First_Name <- ifelse(CleanMailchimp$First_Name == "" | is.na(CleanMailchimp$First_Name), CleanMailchimp$Email, CleanMailchimp$First_Name)
+      
+    } else {
+      CleanMailchimp$First_Name <- CleanMailchimp$Email
+      
+      CleanMailchimp$group_no_name <- "Yes"
+    }
+    
     ifelse(input$mc_type == "Unsubscribed", CleanMailchimp$receive_emails <- FALSE, NA)
     
-    CleanMailchimp$group_no_name <- ifelse(CleanMailchimp$First_Name == "" | is.na(CleanMailchimp$First_Name), "yes", NA)
-    
-    CleanMailchimp$First_Name <- ifelse(CleanMailchimp$First_Name == "" | is.na(CleanMailchimp$First_Name), CleanMailchimp$Email, CleanMailchimp$First_Name)
-    
     CleanMailchimp[,paste("group_",input$mc_type,sep="")]<- "yes"
+    
+    mc_order <- c("First_Name", "Last_Name", "Email", "Full_address", "Home_phone", "Country", "State", "user_notes",
+                  "group_Subscribed","group_Cleaned","group_Unsubscribed","group_no_name")
+    
+    CleanMailchimp <- select(CleanMailchimp, intersect(c(mc_order, input$mc_add_field), names(CleanMailchimp)))
     
     return(CleanMailchimp)
     
@@ -182,7 +224,7 @@ shinyServer(function(input, output, session) {
     if (length(grep("csv", input$cc_datafile$datapath)) + length(grep("CSV", input$cc_datafile$datapath)) == 0) {
       read_excel(input$cc_datafile$datapath, col_types = "text")
     } else {
-      read.csv(input$cc_datafile$datapath, fileEncoding="UTF-8-BOM")
+      read.csv(input$cc_datafile$datapath,stringsAsFactors = FALSE)
     }
   })
   
@@ -194,27 +236,103 @@ shinyServer(function(input, output, session) {
     datatable(getData_cc(), class = 'cell-border stripe nowrap', options = list(pageLength = 15))
   )
   
+  CCVariables <- c()
+  
+  sep <- reactive({
+    input$group_sep
+  })
+  
+  output$CC_group_field <- renderUI({
+    
+    options <- setdiff(names(getData_cc()),CCVariables)
+    
+    pickerInput(inputId = "cc_group_field", label = "Field for Groups",
+                choices = options,
+                multiple = FALSE,
+                options = pickerOptions(actionsBox = TRUE, 
+                                        selectedTextFormat = paste0("count > ", length(options)-1),
+                                        countSelectedText = "All selected")
+                
+    )
+    
+    
+  })
+  
   datasetTrans_cc <- eventReactive(input$cc_transform,{
     ConstantC <- getData_cc()
     
-    CleanConstantC <- ConstantC
+    email_groups_name <- strsplit(unlist(ConstantC[input$cc_group_field]),sep()) %>%
+      unlist() %>%
+      trimws()%>%
+      unique() %>%
+      na.omit() %>%
+      sort()
     
-    return(CleanConstantC)
+    group_len <- length(email_groups_name)
+    
+    num_groups_note <- paste(group_len, "unique groups create.")
+    
+    showNotification(num_groups_note, duration = 15,type = "message")
+    
+    return(email_groups_name)
     
   })
   
   observeEvent(input$cc_transform, {
-    updateTabsetPanel(session, "ccTab", selected = "Result")
+    updateTabsetPanel(session, "ccTab", selected = "Group list")
   })
   
   output$cc_result <- renderDataTable({
-    datatable(datasetTrans_cc(), class = 'cell-border stripe nowrap', options = list(pageLength = 15))
+    datatable(data.frame(datasetTrans_cc()), class = 'cell-border stripe nowrap', options = list(pageLength = 15))
+  })
+  
+  ####
+  
+  group_result <- eventReactive(input$group_clean,{
+    
+    ConstantC <- getData_cc()
+    emaillist <- ConstantC[input$cc_group_field]
+    
+    email_groups_name <- datasetTrans_cc()
+    group_len <- length(email_groups_name)
+    
+    #Split the list column for mapping later
+    pre_split <- data.frame(gsub(paste0(sep()," "),sep(),as.matrix(emaillist)))
+    split_list <- separate(pre_split, 1, paste0("col", 1:group_len), sep = sep())
+    split_list <- split_list[,colSums(is.na(split_list))<nrow(split_list)] %>%
+      data.frame()
+    
+    
+    result <- data.frame()
+    result <- data.frame(emaillist, matrix(ncol = length(email_groups_name)))
+    colnames(result)[-1] <- email_groups_name
+    
+    for (j in 1:max(1,ncol(split_list))){
+      for (i in email_groups_name){
+        result[which(split_list[,j] == i),i] <- i
+      }
+    }
+    colnames(result)[-1] <- paste0("Group ",email_groups_name)
+    
+    return(result)
+    
+  })
+  
+  observeEvent(input$group_clean, {
+    updateTabsetPanel(session, "ccTab", selected = "Group result")
+  })
+  
+  output$group_result <- renderDataTable({
+    datatable(group_result(), class = 'cell-border stripe nowrap', options = list(pageLength = 15))
   })
   
   output$cc_downloadData <- downloadHandler(
-    filename = "clean_constant_contact_file.csv",
+    filename = "emaillist_result.xlsx",
     content = function(file){
       write.csv(datasetTrans_cc(),file,na = "")
+      
+      write.xlsx(group_result, file, sheetName="clean data",showNA=FALSE)
+      write.xlsx(datasetTrans_cc, file, sheetName="group name", append = T)
     }
   )
   
