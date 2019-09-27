@@ -329,10 +329,8 @@ shinyServer(function(input, output, session) {
   output$cc_downloadData <- downloadHandler(
     filename = "emaillist_result.xlsx",
     content = function(file){
-      write.csv(datasetTrans_cc(),file,na = "")
-      
-      write.xlsx(group_result, file, sheetName="clean data",showNA=FALSE)
-      write.xlsx(datasetTrans_cc, file, sheetName="group name", append = T)
+      write.xlsx(group_result(), file, sheetName="clean data",showNA=FALSE)
+      write.xlsx(datasetTrans_cc(), file, sheetName="group name", append = T)
     }
   )
   
